@@ -5,7 +5,7 @@ pipeline {
     AZURE_OPENAI_ENDPOINT = 'https://bindh-maaplwo0-eastus2.cognitiveservices.azure.com'
     DEPLOYMENT_NAME       = 'gpt-35-turbo'
     API_VERSION           = '2025-01-01-preview'
-    AZURE_OPENAI_APIKEY   = ''
+    AZURE_OPENAI_APIKEY   =  credentials('AZURE_OPENAI_APIKEY')
     BUILD_CONFIGURATION   = 'Release'
     SOLUTION_PATTERN      = '**/*.sln'
     ARTIFACT_OUTPUT       = 'publish_output'
