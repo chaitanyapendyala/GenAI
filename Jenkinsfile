@@ -25,9 +25,7 @@ You are a Jenkins pipeline expert. Review the following Jenkinsfile and provide:
 ### 🔍 Recommendations
 - Suggestions to improve code quality, performance, security, maintainability.
 
-\`\`\`
 ${groovyContent}
-\`\`\`
 """
           def body = groovy.json.JsonOutput.toJson([
             messages: [
