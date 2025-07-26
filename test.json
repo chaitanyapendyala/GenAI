@@ -1,0 +1,27 @@
+{
+ "pipeline": {
+   "name": "GPT",
+   "on": ["push", "pull_request"],
+   "jobs": [ 
+     {
+       "name": "Build",
+       "steps": ["..."]
+     },
+     {
+       "name": "Test1",
+       "steps": ["..."]
+     },
+     {
+       "name": "GPT-4 Request Review",
+       "condition": "branch == 'master' || branch == 'test'",
+       "steps": ["..."]
+     }
+   ]
+ },
+ "test": {
+    "name": "Chaitanya P", 
+    "age": "30", 
+    "city": "India", 
+    "interests": ["coding", "music", "trekking"] 
+ }
+}
