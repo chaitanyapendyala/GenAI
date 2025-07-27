@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     environment {
-        GITHUB_TOKEN            = credentials('github-pat')
-        AZURE_OPENAI_ENDPOINT   = credentials('azure-openai-endpoint')
-        AZURE_OPENAI_DEPLOYMENT = credentials('azure-openai-deployment')
-        AZURE_OPENAI_VERSION    = credentials('azure-openai-version')
-        AZURE_OPENAI_KEY        = credentials('azure-openai-key')
+        GITHUB_TOKEN            = credentials('GITHUB_TOKEN')
+        AZURE_OPENAI_ENDPOINT   = credentials('AZURE_OPENAI_ENDPOIN')
+        AZURE_OPENAI_DEPLOYMENT = credentials('AZURE_OPENAI_DEPLOYMENT')
+        AZURE_OPENAI_VERSION    = credentials('AZURE_OPENAI_VERSION')
+        AZURE_OPENAI_KEY        = credentials('AZURE_OPENAI_KEY')
     }
 
     stages {
