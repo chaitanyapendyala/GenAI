@@ -1,118 +1,65 @@
-#!/usr/bin/env python3
-
-import os
-import sys
+import argparse
 import subprocess
 import requests
 import json
+import os
 
-# === GitHub Environment Variables ===
+def get_diff(base_branch, head_branch):
+    subprocess.run(['git', 'fetch', 'origin', base_branch, head_branch], check=True)
+    diff = subprocess.check_output(['git', 'diff', f'origin/{base_branch}', f'origin/{head_branch}'])
+    return diff.decode()
 
-GITHUB_REPO = os.environ.get('GITHUB_REPO')  # e.g., my-org/my-repo
-PR_ID = os.environ.get('PR_ID')              # GitHub PR number
-GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+def call_azure_openai(endpoint, deployment, api_version, key, diff):
+    headers = {
+        "Content-Type": "application/json",
+        "api-key": key
+    }
+    url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are a senior code reviewer. Provide file-wise suggestions and then an overall summary."},
+            {"role": "user", "content": f"Here is the code diff:\n\n{diff}"}
+        ]
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    response.raise_for_status()
+    return response.json()['choices'][0]['message']['content']
 
-# === Azure OpenAI ===
+def comment_on_pr(repo, pr_id, token, comment):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    url = f"https://api.github.com/repos/{repo}/issues/{pr_id}/comments"
+    data = {"body": comment}
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()
 
-AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT')
-AZURE_OPENAI_DEPLOYMENT = os.environ.get('AZURE_OPENAI_DEPLOYMENT')
-AZURE_OPENAI_VERSION = os.environ.get('AZURE_OPENAI_VERSION')
-AZURE_OPENAI_KEY = os.environ.get('AZURE_OPENAI_KEY')
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--repo', required=True)
+    parser.add_argument('--pr', required=True)
+    parser.add_argument('--token', required=True)
+    parser.add_argument('--openai-endpoint', required=True)
+    parser.add_argument('--deployment', required=True)
+    parser.add_argument('--api-version', required=True)
+    parser.add_argument('--openai-key', required=True)
+    args = parser.parse_args()
 
-def check_env(var, name):
-    if not var:
-        print(f" Missing env var: {name}")
-        sys.exit(1)
+    base_branch = os.environ.get('CHANGE_TARGET', 'main')
+    head_branch = os.environ.get('CHANGE_BRANCH', 'feature')
 
-for val, name in [
-    (GITHUB_REPO, 'GITHUB_REPO'),
-    (PR_ID, 'PR_ID'),
-    (GITHUB_TOKEN, 'GITHUB_TOKEN'),
-    (AZURE_OPENAI_ENDPOINT, 'AZURE_OPENAI_ENDPOINT'),
-    (AZURE_OPENAI_DEPLOYMENT, 'AZURE_OPENAI_DEPLOYMENT'),
-    (AZURE_OPENAI_VERSION, 'AZURE_OPENAI_VERSION'),
-    (AZURE_OPENAI_KEY, 'AZURE_OPENAI_KEY'),
-]:
-    check_env(val, name)
+    print(f"🔍 Getting diff between {base_branch} and {head_branch}...")
+    diff = get_diff(base_branch, head_branch)
+    print("✅ Diff generated")
 
-# === Step 1: Get PR details from GitHub ===
+    print("🤖 Analyzing with Azure OpenAI...")
+    feedback = call_azure_openai(args.openai_endpoint, args.deployment, args.api_version, args.openai_key, diff)
+    print("✅ Review feedback received")
 
-headers = {
-    "Authorization": f"Bearer {GITHUB_TOKEN}",
-    "Accept": "application/vnd.github+json"
-}
+    print("📬 Posting review to GitHub PR...")
+    comment_on_pr(args.repo, args.pr, args.token, feedback)
+    print("✅ Comment posted successfully")
 
-pr_url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_ID}"
-r = requests.get(pr_url, headers=headers)
-
-if r.status_code != 200:
-    print(f" PR #{PR_ID} not found. Status: {r.status_code}")
-    sys.exit(1)
-
-pr_data = r.json()
-base_branch = pr_data['base']['ref']
-head_branch = pr_data['head']['ref']
-
-print(f"📌 PR Base branch: {base_branch}")
-print(f"📌 PR Head branch: {head_branch}")
-
-# === Step 2: Generate diff ===
-
-print("📂 Generating git diff...")
-subprocess.run(["git", "fetch", "origin", base_branch], check=True)
-subprocess.run(["git", "fetch", "origin", head_branch], check=True)
-
-diff_cmd = ["git", "diff", f"origin/{base_branch}...origin/{head_branch}"]
-with open("pr_diff.txt", "w") as f:
-    subprocess.run(diff_cmd, stdout=f, check=True)
-
-# === Step 3: Analyze with Azure OpenAI ===
-
-with open("pr_diff.txt", "r") as f:
-    diff_summary = f.read()
-
-payload = {
-    "messages": [
-        {
-            "role": "system",
-            "content": "You are a senior code reviewer. Provide structured, detailed PR feedback per file."
-        },
-        {
-            "role": "user",
-            "content": f"Here are the PR changes:\n\n{diff_summary}\n\nFor each file, provide:\n1. Accurate changes summary.\n2. Modifications for changes summary.\n\nFormat:\n### File: filename\n\n#### Changes:\n- ...\n\n#### Modifications:\n- ...\n\nEnd with an overall review summary."
-        }
-    ]
-}
-
-openai_headers = {
-    "Content-Type": "application/json",
-    "api-key": AZURE_OPENAI_KEY
-}
-
-ai_url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version={AZURE_OPENAI_VERSION}"
-ai_resp = requests.post(ai_url, headers=openai_headers, json=payload)
-
-if ai_resp.status_code != 200:
-    print(f" OpenAI failed. Status: {ai_resp.status_code}")
-    print(ai_resp.text)
-    sys.exit(1)
-
-feedback = ai_resp.json()['choices'][0]['message']['content']
-
-# === Step 4: Post GitHub PR Comment ===
-
-print(" Posting feedback to GitHub PR...")
-
-comment_url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{PR_ID}/comments"
-comment_payload = {
-    "body": feedback
-}
-
-post_resp = requests.post(comment_url, headers=headers, json=comment_payload)
-
-if post_resp.status_code != 201:
-    print(f" Failed to post GitHub comment. Status: {post_resp.status_code}")
-    print(post_resp.text)
-    sys.exit(1)
-
-print("Feedback posted to PR successfully.")
+if __name__ == '__main__':
+    main()
